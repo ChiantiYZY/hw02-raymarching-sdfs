@@ -882,7 +882,7 @@ void main() {
     //  color = 0.5 * (vec3(1.0));
     //  out_Col = vec4(color, 1.f);
 
-     float perlin = cnoise(isect * 0.1f);
+     float perlin = cnoise(isect * 0.1f * sin(u_Time * 0.01));
 
     // float scale = mix(0.5f, 1.f, 0.1 * perlin);
      out_Col = vec4(perlin * vec3(0.4549, 0.7098, 0.7529), 1.f);
