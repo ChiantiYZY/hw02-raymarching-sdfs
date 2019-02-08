@@ -12,7 +12,7 @@ float mod289(float x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
 vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
 vec4 perm(vec4 x){return mod289(((x * 34.0) + 1.0) * x);}
 
-float noise(vec3 p){
+float snoise(vec3 p){
     vec3 a = floor(p);
     vec3 d = p - a;
     d = d * d * (3.0 - 2.0 * d);
@@ -33,53 +33,20 @@ float noise(vec3 p){
 
     return o4.y * d.y + o4.x * (1.0 - d.y);
 }
-vec2 rand(vec2 p)
+float default3DFbm(vec3 P, float frequency, float lacunarity )
 {
-    return fract(sin(vec2(dot(p,vec2(127.1,311.7)),
-                          dot(p, vec2(269.5, 183.3))))
-                 * 43758.5453);
-}
-/*
-vec4 noise(vec2 p)
-{
-
-    float distance = 1000.f;
-
-    float width = 1.0f / u_Dimensions.x;
-    float height = 1.0f / u_Dimensions.y;
-
-    vec2 randPos;
-
-    ivec2 cell_Pos = ivec2(int(p.x / width), int(p.y / height));
-
-    vec3 col;
-
-    for(int i = 0; i < 3; i++)
+    float t = 0.0f;
+    float amplitude = 1.0;
+    float amplitudeSum = 0.0;
+    for(int k = 0; k < 8; ++k)
     {
-        for(int j = 0; j < 3; j++)
-        {
-            vec2 tmpCell = vec2(clamp(1.0f * float((cell_Pos.x + i - 1)) * width, 0.f, 1.f),
-                                clamp(1.0f * float((cell_Pos.y + j - 1)) * height, 0.f, 1.f));
-
-
-            randPos = tmpCell + vec2(rand(tmpCell).x * width, rand(tmpCell).y * height) ;
-
-            vec2 disVec = vec2((randPos - p).x / width, (randPos - p).y / height) ;
-
-            if(distance > length(disVec))
-            {
-                distance = length(disVec);
-
-                col = texture(u_RenderedTexture, randPos).xyz;
-            }
-        }
+        t += min(snoise(P * frequency), 1.0) * amplitude;
+        amplitudeSum += amplitude;
+        amplitude *= 0.5;
+        frequency *= lacunarity;
     }
-    return vec4(col, distance);
+    return t/amplitudeSum;
 }
-
-*/
-
-
 float impulse (float k, float x)
 {
       float h = k * x;
@@ -106,6 +73,16 @@ mat4 rotateX(float theta) {
         vec4(0, -s, c, 0),
         vec4(0, 0, 0, 1)
     );
+}
+float trianlgeWave(float x, float freq, float amplitude)
+{
+    //x = m - abs(i % (2*m) - m)
+
+    //return x - abs(float(int(freq) % int(2.f * x)) - x);
+
+    //y = abs((x++ % 6) - 3);
+    //return float(abs((float((int(x)+1) % 6)) - 3.f));
+    return float(abs(int(x * freq) % int(amplitude) - int((0.5 * amplitude))));
 }
 
 
@@ -140,6 +117,17 @@ vec3 opTwist( vec3 p )
 
     return vec3(m * p.xz,p.y);
 }
+vec3 opCheapBend( vec3 p )
+{
+    float step = smoothstep(-0.02, 0.02, cos(u_Time * 0.05 + 3.f * p.x) * 0.01);
+    float c = sin(step);
+    float s = sin(step);
+    mat2  m = mat2(c,-s,s,c);
+    vec2 r = m * p.xy;
+    vec3  q = vec3(r.xy, p.z);
+    return q;
+}
+
 float onion( in float d, in float h )
 {
     return abs(d)-h;
@@ -259,13 +247,34 @@ vec2 obj2(vec3 pos)
     return vec2(d * 2.f, 2.f);
 }
 
+//roundbox
+vec2 obj5(vec3 pos)
+{
+    float d = 1e10;
+
+    pos = pos + vec3(7.5, -11.f, -2.0);
+
+    float scale = mix(2.f, 1.f, abs(sin(u_Time * 0.01)));
+    pos /= 3.f;
+    
+    float d1 = sdRoundBox(pos, vec3(1.f), 0.05);
+    
+	  float d2 = sphere(pos, 1.4);
+
+    float ds = min(d, opSmoothSubtraction(d2, d1, 0.1));
+    d = min(d, ds);
+
+    return vec2(d * 2.f, 3.f);
+
+} 
+
 //heart
 vec2 obj3(vec3 pos)
 {
     float d = 1e10;
     pos = pos + vec3(7.5, -10.f, -2.0);
-    float scale = impulse(1.f, abs(sin(u_Time * 3.14 * 0.05)));
-    pos /= 2.f * scale;
+    float scale = impulse(1.5f, abs(sin(u_Time * 3.14 * 0.03)));
+    pos /= 3.f * scale;
 
     mat4 r = rotateZ(3.14 / 6.f);
     mat4 rr = rotateZ(-3.14 / 6.f);
@@ -279,73 +288,22 @@ vec2 obj3(vec3 pos)
 
 }
 
-//
+//wave
 vec2 obj4(vec3 pos)
 {
     float d = 1e10;
+    // pos += vec3(-7.5, -12.5f + trianlgeWave(sin(u_Time * 0.01), 0.2f, 3.f), 0.f);
+    pos += vec3(-9.f, -12.5f , 0.f);
+    //pos *= 2.f;
+    float d1 = sdBox(opCheapBend(pos), vec3(8.f, 0.3f, .5f));
 
-    float noise = noise(pos);
-
-    float r = mix(0.8, 1.2, abs(sin(u_Time * 0.01)));
-    r = 1.21;
-   //float  r = noise ;
-
-    float d1 = sphere(pos + vec3(0.f , 0.f, -4.f ), 1.f);
-    float d2_1 = sphere(pos + vec3(0.f , -1.5f , -4.f ), r);
-    float d2_2 = sphere(pos + vec3(0.f , 0.f , -5.5f ), r);
-    float d2_3 = sphere(pos + vec3(1.5f , 0.f , -4.f ), r);
-    float d2_4 = sphere(pos + vec3(-1.5f , 0.f , -4.f ), r);
-    float d2_5 = sphere(pos + vec3(0.f , 1.5f , -4.f ), r);
-    float d2_6 = sphere(pos + vec3(0.f , 0.f , -2.5f ), r);
-    // d = min(d, d1);5
-
-    float d_union = opSmoothUnion(d2_1, d2_2, 0.1);
-    d_union = opSmoothUnion(d_union, d2_3, 0.1);
-    d_union = opSmoothUnion(d_union, d2_4, 0.1);
-    d_union = opSmoothUnion(d_union, d2_5, 0.1);
-    d_union = opSmoothUnion(d_union, d2_6, 0.1);
-    //d = min(d, opSmoothSubtraction(d1, d2_1, 0.1));
-    d = min(d, opSmoothSubtraction(d1, d_union, 0.1));
-
-        float d_mix = d + 0.5f * noise;
-
-        d_mix = mix(d, d_mix, sin(u_Time * 0.01));
-
-
-        d = min(d, d_mix);
-    
-    // d = min(d, d2_2);
-
-    // vec3 q = pos - vec3(0.0,0.0,1.0);
-    // float d1 = sphere( q-vec3(0.0,0.5+0.3,0.0), 0.55 );
-    // float d2 = sdRoundBox(q, vec3(0.6,0.2,0.7), 0.1 ); 
-    // float dt = opSmoothSubtraction(d2,d1, 0.25);
-    // d = min( d, dt );
+    d = min(d, d1);
 
     return vec2(d, 4.f);
 
 }
 
-//roundbox
-vec2 obj5(vec3 pos)
-{
-    float d = 1e10;
 
-    pos = pos + vec3(7.5, -11.f, -2.0);
-
-    float scale = mix(2.f, 1.f, abs(sin(u_Time * 0.01)));
-    pos /= 2.f;
-    
-    float d1 = sdRoundBox(pos, vec3(1.f), 0.05);
-    
-	  float d2 = sphere(pos, 1.4);
-
-    float ds = min(d, opSmoothSubtraction(d2, d1, 0.1));
-    d = min(d, ds);
-
-    return vec2(d * 2.f, 3.f);
-
-} 
 
 //torus
 vec2 obj6(vec3 pos)
@@ -374,12 +332,13 @@ vec2 obj6(vec3 pos)
 vec2 obj7(vec3 pos)
 {
     float d = 1e10;
-    float d1 = sdBox(pos + vec3(0.f, -5.f, 0.f), vec3(15.f, .1f, 2.f));
-    float d2 = sdBox(pos + vec3(0.f, 10.f, 0.f), vec3(15.f, .1f, 2.f));
-    float d3 = sdBox(pos + vec3(0.f, -20.f, 0.f), vec3(15.f, .1f, 2.f));
-    float d4 = sdBox(pos + vec3(0.f, -5.f, 0.f), vec3(.1f, 15.f, 2.f));
-    float d5 = sdBox(pos + vec3(-15.f, -5.f, 0.f), vec3(.1f, 15.f, 2.f));
-    float d6 = sdBox(pos + vec3(15.f, -5.f, 0.f), vec3(.1f, 15.f, 2.f));
+    float d1 = sdBox(pos + vec3(0.f, -5.f, 0.f), vec3(15.f, .1f, 4.f));
+    float d2 = sdBox(pos + vec3(0.f, 10.f, 0.f), vec3(15.f, .1f, 4.f));
+    float d3 = sdBox(pos + vec3(0.f, -20.f, 0.f), vec3(15.f, .1f, 4.f));
+    float d4 = sdBox(pos + vec3(0.f, -5.f, 0.f), vec3(.1f, 15.f, 4.f));
+    float d5 = sdBox(pos + vec3(-15.f, -5.f, 0.f), vec3(.1f, 15.f, 4.f));
+    float d6 = sdBox(pos + vec3(15.f, -5.f, 0.f), vec3(.1f, 15.f, 4.f));
+    float d7 = sdBox(pos + vec3(0.f, -5.f, 4.f), vec3(15.f, 15.f, .1f));
 
 
     d = min(d, d1);
@@ -388,38 +347,46 @@ vec2 obj7(vec3 pos)
     d = min(d, opSmoothUnion(d, d4, 0.01));
     d = min(d, opSmoothUnion(d, d5, 0.01));
     d = min(d, opSmoothUnion(d, d6, 0.01));
+    d = min(d, opSmoothUnion(d, d7, 0.01));
 
     return vec2(d, 7.f);
 }
 
-float mapObj1(vec3 pos)
+vec2 mapObj1(vec3 pos)
 {
     float d = 1e10;
-    float d_1 = sdBox(pos + vec3(-7.5f, 2.5, -2.f), vec3(15.f, 15.f, 2.f));
+    float d_1 = sdBox(pos + vec3(-7.5f, 2.5, -2.f), vec3(5.f, 5.f, 5.f));
 
     d = min(d, d_1);
-    return d;
+    return vec2(d, 8.f);
 }
 
-bool reachObj1(vec3 dir, vec3 eye)
+vec2 mapObj2(vec3 pos)
 {
-  float depth = 0.001f;
-  float tag;
-for (int i = 0; i < 64; i++) {
-    //float dist = sdHexPrism(eye + depth * dir, vec2(3.f, 3.f));
-    //float dist = sdTorus(eye + depth * dir, vec2(3.f, 5.f));
-    //float dist = sphere(eye + depth * dir);
-    float dist = mapObj1(eye + depth * dir);
-    tag = mapObj1(eye + depth * dir);
-    if (dist <= 0.01f || depth > 100.f) {
-        return true;
-    }
-    // Move along the view ray
-    depth += dist;
-}
-return false;
+    float d = 1e10;
+    float d1 = sdBox(pos + vec3(7.5, 2.5, -2.f), vec3(5.f));
+
+    d = min(d, d1);
+    return vec2(d, 8.f);
 }
 
+vec2 mapObj3(vec3 pos)
+{
+    float d = 1e10;
+    float d1 = sdBox(pos + vec3(7.5, -12.5f, -2.f), vec3(5.f));
+
+    d = min(d, d1);
+    return vec2(d, 8.f);
+}
+
+vec2 mapObj4(vec3 pos)
+{
+    float d = 1e10;
+    float d1 = sdBox(pos + vec3(-7.5, -12.5f, -2.f), vec3(7.f, 7.f, 5.f));
+
+    d = min(d, d1);
+    return vec2(d, 8.f);
+}
 
 
 
@@ -427,47 +394,104 @@ return false;
 
 vec2 map(vec3 pos)
 {
-    //pos += vec3(5.f, 0.f, 0.f);
+
     float d = 1e10;
-    //float offset = smoothstep(0, 10.f*fs_Pos.y, cos(u_Time * 0.05));
-
-    // pos += vec3(-3.f, 0.f, 0.f);
-
-    // float d1 = sphere(pos + vec3(-3.f , 0.f, -4.f ), 1.f);
-    // float d1_1 = sphere(pos + vec3(-7.f, 0.f, -4.f) + 0.1 * vec3(sin(pos.x), sin(pos.y), sin(pos.z)), 1.f);
-    // float d1_2 = sphere(pos + vec3(-3.f, -3.5f, 0.f), 1.f);
     float d2 = sdTorus(opTwist(pos + vec3(0.f, 0.f, -5.f)), vec2(0.3f, 0.03f));
 
     float tag = 0.f;
 
-    // if(reachObj1)
+    float box_d1 = mapObj1(pos).x;
+    float box_d2 = mapObj2(pos).x;
+    float box_d3 = mapObj3(pos).x;
+    float box_d4 = mapObj4(pos).x;
+
+    if(box_d1 < 0.1)
+    {
+      float d1 = obj1(pos).x;
+      if(d1 < d)
+      {
+        d = d1;
+        tag = obj1(pos).y;
+        box_d1 = d;
+        //tag = 3.f;
+      }
+    }
+    
+
+    if(box_d2 < 0.1)
+    {
+      float d1 = obj2(pos).x;
+      if(d1 < d)
+      {
+        d = d1;
+        tag = obj2(pos).y;
+        box_d2 = d;
+        //tag = 3.f;
+      }
+    }
+
+    if(box_d3 < 0.1)
+    {
+      float d1 = obj3(pos).x;
+      float d2 = obj5(pos).x;
+      if(d1 < d2 && d1 < d)
+      {
+        d = d1;
+        tag = obj3(pos).y;
+        box_d3 = d;
+        //tag = 3.f;
+      }
+      else if(d2 < d1 && d2 < d)
+      {
+        d = d2;
+        tag = obj5(pos).y;
+        box_d3 = d;
+      }
+    }
+
+    if(box_d4 < 0.1)
+    {
+      float d1 = obj4(pos).x;
+      
+      if(d1 < d)
+      {
+        d = d1;
+        tag = obj4(pos).y;
+        box_d4 = d;
+        //tag = 3.f;
+      }
+    }
+
+    // if(obj4(pos).x < d)
+    //   {
+    //     d = obj4(pos).x;
+    //     tag = obj4(pos).y;
+    //    // box_d1 = d;
+    //     //tag = 3.f;
+    //   }
+
+
+    // if(obj3(pos).x < d)
+    // {
+    //     d = obj3(pos).x;
+    //     tag = obj3(pos).y;
+    //     //tag = 3.f;
+    // }
+
+    // if(obj1(pos).x < d)
     // {
     //     d = obj1(pos).x;
     //     tag = obj1(pos).y;
+    //     ///tag = 1.f;
+        
     // }
 
-
-    if(obj3(pos).x < d)
-    {
-        d = obj3(pos).x;
-        tag = obj3(pos).y;
-        //tag = 3.f;
-    }
-
-    if(obj1(pos).x < d)
-    {
-        d = obj1(pos).x;
-        tag = obj1(pos).y;
-        ///tag = 1.f;
-        
-    }
-
-    if(obj2(pos).x < d)
-    {
-        d = obj2(pos).x;
-        tag = obj2(pos).y;
-        //tag = 2.f;
-    }
+    // if(obj2(pos).x < d)
+    // {
+    //     d = obj2(pos).x;
+    //     tag = obj2(pos).y;
+    //     //tag = 2.f;
+    // }
 
  
 
@@ -480,19 +504,19 @@ vec2 map(vec3 pos)
 
     // }
 
-    if(obj5(pos).x < d)
-    {
-        d = obj5(pos).x;
-        tag = obj5(pos).y;
+    // if(obj5(pos).x < d)
+    // {
+    //     d = obj5(pos).x;
+    //     tag = obj5(pos).y;
       
-    }
+    // }
 
-    if(obj6(pos).x < d)
-    {
-        d = obj6(pos).x;
-        tag = obj6(pos).y;
+    // if(obj6(pos).x < d)
+    // {
+    //     d = obj6(pos).x;
+    //     tag = obj6(pos).y;
    
-    }
+    // }
 
 
     if(obj7(pos).x < d)
@@ -501,6 +525,35 @@ vec2 map(vec3 pos)
         tag = obj7(pos).y;
         //tag = 7.f;
     }
+
+    d = min(d, min(box_d1, (min(box_d2, min(box_d3, box_d4)))));
+
+    
+
+
+    // if(mapObj1(pos).x < d)
+    // {
+    //   d = mapObj1(pos).x;
+    //   tag = mapObj1(pos).y;
+    // }
+
+    // if(mapObj2(pos).x < d)
+    // {
+    //   d = mapObj2(pos).x;
+    //   tag = mapObj2(pos).y;
+    // }
+
+    // if(mapObj3(pos).x < d)
+    // {
+    //   d = mapObj3(pos).x;
+    //   tag = mapObj3(pos).y;
+    // }
+
+    // if(mapObj4(pos).x < d)
+    // {
+    //   d = mapObj4(pos).x;
+    //   tag = mapObj4(pos).y;
+    // }
     //float d2_mix = mix(d2_1, d2, cos(u_Time * 0.01));
     //d = min(d, d2);
 
@@ -511,7 +564,7 @@ vec2 map(vec3 pos)
     // vec3 q = pos - vec3(1.0,0.0,1.0);
     //d = min(d, opSmoothSubtraction(d2, d3, 0.1));
 
-    // d = min(d, d2_5);
+     //d = min(d, box_d1);
     return vec2(d, tag);
 
 }
@@ -613,6 +666,9 @@ void main() {
       case 1: color = vec3(0.1804, 0.251, 0.8784);break;
       case 2: color = vec3(0.9529, 0.3294, 0.4627);break;
       case 3: color = vec3(0.7765, 0.7882, 0.2314);break;
+      case 4: color = vec3(0.6275, 0.8745, 0.3098);break;
+      case 7: color = vec3(0.5529, 0.3922, 0.1529);break;
+      case 8: color = vec3(1.f);
     }
 
     //color = vec3(tag / 4.0);
@@ -624,6 +680,7 @@ void main() {
   {
      color = 0.5 * (vec3(1.0));
      out_Col = vec4(color, 1.f);
+     out_Col = vec4(0.5 * (dir + vec3(1.f)), 1.f);
   }
 
 
