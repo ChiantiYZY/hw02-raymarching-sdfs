@@ -50,4 +50,4 @@ Surface normal is calculated using the gradient of the SDF function. It is then 
   I also looked at Jamie Wong's blog for more detailed explaination about SDF transformation and normal calculating. The link is attached below:
   http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
 
-  
+
